@@ -1,42 +1,48 @@
-const express = require("express")
-const app = express()
-app.use(express.json())
-const db = require("./db")
-const port = 3000
+const express = require('express');
+const bodyParser = require('body-parser');
+const db = require('./db');
+const Subject = require('./Subject');
+const LoggingObserver = require('./subscribers/LoggingObserver');
+const NotificationObserver = require('./subscribers/NotificationObserver');
+const DatabaseObserver = require('./subscribers/DatabaseObserver');
 
-const Observable = require("./Observable")
-const logSubscriber = require("./subscribers/logSubscriber")
-const notifySubscriber = require("./subscribers/notifySubscriber")
-const emailSubscriber = require("./subscribers/emailSubscriber")
-const databaseLogSubscriber = require("./subscribers/databaseLogSubscriber")
+// Initialize app and subject
+const app = express();
+const subject = new Subject();
 
-app.post("/", (req, res) => {
-	const { name, createdAt } = req.body
+// Middleware
+app.use(bodyParser.json());
 
-	if (!name || !createdAt) {
-		return res.status(400).json({ message: "Name and createdAt are required" })
-	}
+// Register observers
+subject.addObserver(new LoggingObserver());
+subject.addObserver(new NotificationObserver());
+subject.addObserver(new DatabaseObserver(db));
 
-	const newData = { name, createdAt }
+// POST / - Create a resource and notify observers
+app.post('/', (req, res) => {
+    const { name, createdAt } = req.body;
+    if (!name || !createdAt) {
+        return res.status(400).json({ error: 'Invalid input. Provide name and createdAt.' });
+    }
 
-	console.log("Resource created:", newData)
+    const data = { name, createdAt };
+    subject.notifyObservers(data);
 
-	// Notify all subscribers
+    res.status(201).json({ message: 'Resource created', data });
+});
 
-	res.status(201).json({ message: "Resource created", data: newData })
-})
+// GET / - Retrieve all resources
+app.get('/', (req, res) => {
+    db.all("SELECT * FROM resources", [], (err, rows) => {
+        if (err) {
+            return res.status(500).json({ error: err.message });
+        }
+        res.json({ data: rows });
+    });
+});
 
-// Endpoint: Get all resources
-app.get("/", (req, res) => {
-	db.all(`SELECT * FROM resources`, [], (err, rows) => {
-		if (err) {
-			console.error("Error fetching resources:", err.message)
-			return res.status(500).json({ message: "Error fetching resources" })
-		}
-		res.json({ data: rows })
-	})
-})
-
-app.listen(port, () => {
-	console.log(`Running here ... http://localhost:${port}/`)
-})
+// Start server
+const PORT = 3000;
+app.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
+});
